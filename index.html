@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <!-- Configuracion basica de la pagina y enlace a los estilos globales. -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Mix</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Contenedor principal: sidebar izquierda + vista principal. -->
+  <div class="app-shell">
+    <!-- Barra lateral con marca, fuente local, organizaciones y resumen. -->
+    <aside class="sidebar" aria-label="Navegacion principal">
+      <!-- Identidad visual de la app. -->
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <strong>Local Mix</strong>
+      </div>
+
+      <!-- Navegacion sencilla: inicio y acceso rapido al buscador. -->
+      <nav class="nav-list" aria-label="Secciones">
+        <button class="nav-item active" type="button" data-view="library">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.7a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5z"/></svg>
+          Inicio
+        </button>
+        <button class="nav-item" type="button" data-focus-search>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 19-4.8-4.8a7 7 0 1 0-1.5 1.5l4.8 4.8zM5 10a5 5 0 1 1 10 0 5 5 0 0 1-10 0"/></svg>
+          Buscar
+        </button>
+      </nav>
+
+      <!-- Selector de carpeta/archivos locales. El navegador pide permiso al usuario. -->
+      <section class="source-panel">
+        <div>
+          <p>Fuente local</p>
+          <span id="folderName">VIDEOS</span>
+        </div>
+        <button class="primary-action" type="button" id="pickFolder">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4.2l2 2H18a3 3 0 0 1 3 3v8.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>
+          Abrir Videos
+        </button>
+        <label class="secondary-action">
+          <input id="fileFallback" type="file" webkitdirectory multiple>
+          Importar archivos
+        </label>
+        <button class="secondary-action compact-action" type="button" id="restoreHidden">Restaurar ocultas</button>
+      </section>
+
+      <!-- Editor de formas de organizacion; se guarda/importa/exporta como CSV. -->
+      <section class="organizer-panel" aria-label="Organizaciones guardadas">
+        <div>
+          <p>Organizacion</p>
+          <select id="organizationSelect" aria-label="Forma de organizar"></select>
+        </div>
+        <label>
+          <span>Nombre</span>
+          <input id="organizationName" type="text" placeholder="Nombre de la forma">
+        </label>
+        <div id="columnPicker" class="column-picker"></div>
+        <button class="primary-action" type="button" id="saveOrganization">Guardar</button>
+        <div class="csv-actions">
+          <button class="secondary-action compact-action" type="button" id="exportOrganizations">Exportar CSV</button>
+          <label class="secondary-action compact-action">
+            <input id="importOrganizations" type="file" accept=".csv,text/csv">
+            Importar CSV
+          </label>
+        </div>
+      </section>
+
+      <!-- Resumen de biblioteca: cantidad de archivos y duracion acumulada. -->
+      <section class="mini-stats" aria-label="Resumen">
+        <span><strong id="trackCount">0</strong> archivos</span>
+        <span><strong id="durationTotal">0:00</strong> total</span>
+      </section>
+    </aside>
+
+    <!-- Zona principal con buscador, reproductor visual, artistas, biblioteca y cola. -->
+    <main class="main-view">
+      <!-- Barra superior fija con busqueda y boton para releer la carpeta. -->
+      <header class="topbar">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 19-4.8-4.8a7 7 0 1 0-1.5 1.5l4.8 4.8zM5 10a5 5 0 1 1 10 0 5 5 0 0 1-10 0"/></svg>
+          <input id="titleSearchInput" type="search" placeholder="Buscar titulo" autocomplete="off">
+        </div>
+        <button class="icon-button" type="button" id="rescanFolder" title="Volver a leer la carpeta" aria-label="Volver a leer la carpeta">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.3L13 11h8V3z"/></svg>
+        </button>
+      </header>
+
+      <!-- Cabecera visual: arte para audio o video activo, titulo de biblioteca y estado. -->
+      <section class="hero-band">
+        <div class="media-stage">
+          <div class="vinyl-art" id="audioArtwork" aria-hidden="true">
+            <div class="disc">
+              <span></span>
+            </div>
+          </div>
+          <video id="videoPlayer" class="video-player hidden" controls playsinline></video>
+          <div class="video-placeholder hidden" id="videoPlaceholder" aria-hidden="true">
+            <span></span>
+          </div>
+        </div>
+        <div class="hero-copy">
+          <p>Biblioteca local</p>
+          <h1 id="heroTitle">Tu media, a mano</h1>
+          <span id="heroSubtitle">Elige una carpeta y reproduce audio o video sin subir nada a ningun sitio.</span>
+        </div>
+      </section>
+
+      <!-- Fila horizontal de artistas detectados desde nombres de archivo. -->
+      <section class="artist-strip" aria-label="Artistas detectados">
+        <div class="section-head compact filter-head">
+          <h2>Artistas</h2>
+          <input id="artistSearchInput" class="filter-search" type="search" placeholder="Buscar artista" autocomplete="off">
+        </div>
+        <div id="artistList" class="artist-list"></div>
+      </section>
+
+      <!-- Filtros adicionales por carpeta y tipo, agrupados primero por inicial. -->
+      <section class="filter-strip" aria-label="Filtros por carpeta y tipo">
+        <div class="filter-block">
+          <div class="section-head compact filter-head">
+            <h2>Carpetas</h2>
+            <input id="folderSearchInput" class="filter-search" type="search" placeholder="Buscar carpeta" autocomplete="off">
+          </div>
+          <div id="folderList" class="artist-list"></div>
+        </div>
+        <div class="filter-block">
+          <div class="section-head compact">
+            <h2>Tipo</h2>
+          </div>
+          <div id="typeList" class="artist-list"></div>
+        </div>
+      </section>
+
+      <!-- Cuerpo principal: cola a la izquierda y tabla dinamica de archivos a la derecha. -->
+      <section class="content-grid">
+        <div class="library-panel">
+          <!-- Encabezado de la biblioteca y selector de orden. -->
+          <div class="section-head">
+            <h2>Archivos</h2>
+            <div class="sort-wrap">
+              <label for="sortSelect">Orden</label>
+              <select id="sortSelect">
+                <option value="title">Nombre</option>
+                <option value="artist">Artista</option>
+                <option value="kindLabel">Tipo</option>
+                <option value="folder">Carpeta</option>
+                <option value="duration">Duracion</option>
+              </select>
+            </div>
+          </div>
+          <!-- Tabla generada por JS. El encabezado cambia segun la organizacion elegida. -->
+          <div class="track-table" role="table" aria-label="Lista de archivos">
+            <div id="tableHead" class="track-row table-head" role="row"></div>
+            <div id="trackList" class="track-list"></div>
+          </div>
+          <!-- Estado inicial cuando aun no hay carpeta o no se encontraron medios. -->
+          <div id="emptyState" class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-2-2.83M21 16a3 3 0 1 1-2-2.83"/></svg>
+            </div>
+            <h2>Elige una carpeta multimedia</h2>
+            <p>Se leeran audios y videos. Algunos formatos pueden depender de los codecs que tenga tu navegador.</p>
+          </div>
+        </div>
+
+        <!-- Cola de reproduccion generada desde el archivo actual y el resto de la lista. -->
+        <aside class="queue-panel" aria-label="Cola de reproduccion">
+          <div class="section-head compact">
+            <h2>Cola</h2>
+            <button class="text-button" type="button" id="clearQueue">Limpiar</button>
+          </div>
+          <div id="queueList" class="queue-list"></div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <!-- Barra fija inferior con informacion del archivo actual y controles de reproduccion. -->
+  <footer class="player">
+    <!-- Datos del medio activo: portada sintetica, titulo y subtitulo. -->
+    <div class="now-playing">
+      <div class="cover" id="coverArt" aria-hidden="true">
+        <span></span>
+      </div>
+      <div>
+        <strong id="nowTitle">Nada sonando</strong>
+        <span id="nowArtist">Selecciona un archivo</span>
+      </div>
+    </div>
+
+    <!-- Controles principales: aleatorio, saltos, anterior/siguiente, play y bucle. -->
+    <div class="transport">
+      <div class="transport-buttons">
+        <button class="icon-button" type="button" id="shuffleBtn" title="Aleatorio (Ctrl + S)" aria-label="Aleatorio">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3h4v4h-2V6.4l-4.2 4.2-1.4-1.4L17.6 5H17zM3 6h3.6c1.2 0 2.3.5 3.2 1.4l7.8 7.8H21v2h-4.2c-.5 0-1-.2-1.4-.6L8.4 9.6A2.5 2.5 0 0 0 6.6 9H3zm0 9h3.6c.7 0 1.3-.3 1.8-.7l1.7-1.7 1.4 1.4-1.7 1.7A4.5 4.5 0 0 1 6.6 17H3zm14.6-2.4L19 14v-1h2v4h-4v-2h.6l-1.4-1.4z"/></svg>
+        </button>
+        <button class="icon-button skip-button" type="button" id="back10Btn" title="Retroceder 10 segundos" aria-label="Retroceder 10 segundos">
+          <span>-10</span>
+        </button>
+        <button class="icon-button skip-button" type="button" id="back5Btn" title="Retroceder 5 segundos" aria-label="Retroceder 5 segundos">
+          <span>-5</span>
+        </button>
+        <button class="icon-button" type="button" id="prevBtn" title="Anterior (Ctrl + J)" aria-label="Anterior">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg>
+        </button>
+        <button class="play-button" type="button" id="playBtn" title="Reproducir o pausar (Espacio)" aria-label="Reproducir o pausar">
+          <svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="icon-button" type="button" id="nextBtn" title="Siguiente (Ctrl + L)" aria-label="Siguiente">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM5 19V5l10 7z"/></svg>
+        </button>
+        <button class="icon-button skip-button" type="button" id="forward5Btn" title="Avanzar 5 segundos" aria-label="Avanzar 5 segundos">
+          <span>+5</span>
+        </button>
+        <button class="icon-button skip-button" type="button" id="forward10Btn" title="Avanzar 10 segundos" aria-label="Avanzar 10 segundos">
+          <span>+10</span>
+        </button>
+        <button class="icon-button" type="button" id="repeatBtn" title="Repetir (Ctrl + B)" aria-label="Repetir">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H7a5 5 0 0 0-5 5v2h2v-2a3 3 0 0 1 3-3m10 10H7v-3l-4 4 4 4v-3h10a5 5 0 0 0 5-5v-2h-2v2a3 3 0 0 1-3 3"/></svg>
+        </button>
+      </div>
+      <div class="progress-line">
+        <span id="currentTime">0:00</span>
+        <input id="progress" type="range" min="0" max="100" value="0" step="0.1" aria-label="Progreso">
+        <span id="durationTime">0:00</span>
+      </div>
+    </div>
+
+    <!-- Control de volumen compartido por audio y video. -->
+    <div class="volume">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 7.5-1.4-1.4A4.4 4.4 0 0 0 16.5 12c0-1.2-.5-2.3-1.4-3.1l1.4-1.4a6.4 6.4 0 0 1 0 9"/></svg>
+      <input id="volumeRange" type="range" min="0" max="1" value="0.5" step="0.01" aria-label="Volumen">
+      <span id="volumePercent">50%</span>
+    </div>
+  </footer>
+
+  <!-- Menu contextual que aparece al hacer clic derecho sobre una fila. -->
+  <div id="contextMenu" class="context-menu hidden" role="menu">
+    <button type="button" id="contextPlay">Reproducir</button>
+    <button type="button" id="contextLoop">Bucle de este archivo</button>
+    <button type="button" id="contextMini">Abrir minireproductor</button>
+    <button type="button" id="contextHide">Ocultar de bucles</button>
+  </div>
+
+  <!-- Minireproductor flotante opcional, sincronizado con el reproductor principal. -->
+  <section id="miniPlayer" class="mini-player hidden" aria-label="Minireproductor">
+    <header>
+      <div>
+        <strong id="miniTitle">Nada sonando</strong>
+        <span id="miniMeta">Selecciona un archivo</span>
+      </div>
+      <button class="icon-button mini-close" type="button" id="miniClose" title="Cerrar minireproductor" aria-label="Cerrar minireproductor">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 12.6 12.6-1.4 1.4L5 6.4zM19 6.4 6.4 19 5 17.6 17.6 5z"/></svg>
+      </button>
+    </header>
+    <div class="mini-progress">
+      <span id="miniCurrent">0:00</span>
+      <div><span id="miniProgressBar"></span></div>
+      <span id="miniDuration">0:00</span>
+    </div>
+    <div class="mini-controls">
+      <button class="icon-button" type="button" id="miniBack5" title="Retroceder 5 segundos" aria-label="Retroceder 5 segundos"><span>-5</span></button>
+      <button class="icon-button" type="button" id="miniPrev" title="Anterior" aria-label="Anterior">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg>
+      </button>
+      <button class="play-button" type="button" id="miniPlay" title="Reproducir o pausar" aria-label="Reproducir o pausar">
+        <svg id="miniPlayIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="icon-button" type="button" id="miniNext" title="Siguiente" aria-label="Siguiente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM5 19V5l10 7z"/></svg>
+      </button>
+      <button class="icon-button" type="button" id="miniForward5" title="Avanzar 5 segundos" aria-label="Avanzar 5 segundos"><span>+5</span></button>
+    </div>
+  </section>
+
+  <!-- Elemento de audio oculto; el video visible esta dentro del hero. -->
+  <audio id="audioPlayer"></audio>
+  <!-- Logica de lectura local, parseo de nombres, tabla, CSV y reproduccion. -->
+  <script src="app.js"></script>
+</body>
+</html>
