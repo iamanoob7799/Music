@@ -127,6 +127,7 @@
           <div class="section-head compact filter-head">
             <h2>Carpetas</h2>
             <input id="folderSearchInput" class="filter-search" type="search" placeholder="Buscar carpeta" autocomplete="off">
+            <button class="text-button" type="button" id="hideFolderBtn">Ocultar carpeta</button>
           </div>
           <div id="folderList" class="artist-list"></div>
         </div>
@@ -247,6 +248,11 @@
     <button type="button" id="contextLoop">Bucle de este archivo</button>
     <button type="button" id="contextMini">Abrir minireproductor</button>
     <button type="button" id="contextHide">Ocultar de bucles</button>
+  </div>
+
+  <!-- Menu contextual que aparece al hacer clic derecho sobre una carpeta del filtro. -->
+  <div id="folderContextMenu" class="context-menu hidden" role="menu">
+    <button type="button" id="folderContextHide">Ocultar carpeta</button>
   </div>
 
   <!-- Minireproductor flotante opcional, sincronizado con el reproductor principal. -->

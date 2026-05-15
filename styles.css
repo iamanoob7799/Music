@@ -538,6 +538,10 @@ svg {
   align-items: center;
 }
 
+.filter-head .text-button {
+  flex: 0 0 auto;
+}
+
 .filter-search {
   width: min(260px, 48%);
   min-height: 34px;
@@ -567,6 +571,17 @@ svg {
   display: none;
 }
 
+.folder-level {
+  display: grid;
+  gap: 6px;
+}
+
+.folder-level + .folder-level {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 /* Chips de artista usados como filtros rapidos. */
 .artist-chip {
   flex: 0 0 auto;
@@ -594,6 +609,13 @@ svg {
   border-color: rgba(30, 215, 96, 0.55);
   background: rgba(30, 215, 96, 0.15);
   color: var(--green);
+}
+
+/* Estado de carpeta oculta: sigue visible para poder restaurarla con clic derecho. */
+.artist-chip.folder-hidden {
+  color: var(--muted);
+  border-style: dashed;
+  text-decoration: line-through;
 }
 
 /* Selector de orden de la biblioteca. */

@@ -11,6 +11,7 @@ const rescanFolderBtn = document.querySelector("#rescanFolder");
 const titleSearchInput = document.querySelector("#titleSearchInput");
 const artistSearchInput = document.querySelector("#artistSearchInput");
 const folderSearchInput = document.querySelector("#folderSearchInput");
+const hideFolderBtn = document.querySelector("#hideFolderBtn");
 const sortSelect = document.querySelector("#sortSelect");
 
 // Referencias a la tabla, artistas, cola y resumen de biblioteca.
@@ -55,6 +56,10 @@ const contextLoop = document.querySelector("#contextLoop");
 const contextMini = document.querySelector("#contextMini");
 const contextHide = document.querySelector("#contextHide");
 
+// Menu contextual que aparece con clic derecho sobre una carpeta del filtro.
+const folderContextMenu = document.querySelector("#folderContextMenu");
+const folderContextHide = document.querySelector("#folderContextHide");
+
 // Minireproductor flotante y sus controles.
 const miniPlayer = document.querySelector("#miniPlayer");
 const miniTitle = document.querySelector("#miniTitle");
@@ -90,7 +95,12 @@ const videoExtensions = new Set([
 // Configuracion de la "base CSV" de organizaciones guardada en localStorage.
 const organizationStorageKey = "localMixOrganizationCsv";
 const hiddenTracksStorageKey = "localMixHiddenTracks";
-const defaultFolderName = "Vídeos";
+const hiddenFoldersStorageKey = "localMixHiddenFolders";
+const defaultFolderName = "Videos";
+// Profundidad maxima del filtro de carpetas.
+// 4 = carpeta principal + 3 subcarpetas.
+// Para permitir mas, sube este numero. Ejemplo: 7 = carpeta principal + 6 subcarpetas.
+const maxFolderHierarchyDepth = 7;
 const defaultOrganization = {
   id: "default",
   name: "Predeterminado",
@@ -132,13 +142,15 @@ let directoryHandle = null;
 let isShuffle = false;
 let repeatMode = "off";
 let contextTargetIndex = -1;
+let contextFolderPath = "";
 let activeArtistFilter = "all";
 let activeArtistInitial = "";
 let activeFolderFilter = "all";
-let activeFolderInitial = "";
+let activeFolderInitials = [];
 let activeTypeFilter = "all";
 let activeTypeInitial = "";
 let hiddenTrackIds = loadHiddenTrackIds();
+let hiddenFolderPaths = loadHiddenFolderPaths();
 
 // Estado de organizaciones activas: se inicializa leyendo el CSV guardado.
 let organizationViews = loadOrganizationViews();
@@ -159,6 +171,8 @@ artistSearchInput.addEventListener("input", () => {
   renderLibrary();
 });
 folderSearchInput.addEventListener("input", () => {
+  activeFolderFilter = "all";
+  activeFolderInitials = [];
   renderFolders();
   renderLibrary();
 });
@@ -218,6 +232,12 @@ contextHide.addEventListener("click", () => {
   hideContextMenu();
 });
 
+// Acciones del menu contextual de carpetas.
+folderContextHide.addEventListener("click", () => {
+  toggleFolderHidden(contextFolderPath);
+  hideFolderContextMenu();
+});
+
 // Acciones del minireproductor.
 miniClose.addEventListener("click", () => miniPlayer.classList.add("hidden"));
 miniPlay.addEventListener("click", togglePlay);
@@ -234,13 +254,18 @@ saveOrganization.addEventListener("click", saveCurrentOrganization);
 exportOrganizations.addEventListener("click", exportOrganizationCsv);
 importOrganizations.addEventListener("change", importOrganizationCsv);
 restoreHidden.addEventListener("click", restoreHiddenTracks);
+hideFolderBtn.addEventListener("click", toggleActiveFolderHidden);
 
 // Eventos globales: cerrar menu contextual, atajos y scroll.
 document.addEventListener("click", (event) => {
   if (!contextMenu.contains(event.target)) hideContextMenu();
+  if (!folderContextMenu.contains(event.target)) hideFolderContextMenu();
 });
 document.addEventListener("keydown", handleKeyboardShortcuts);
-window.addEventListener("scroll", hideContextMenu, true);
+window.addEventListener("scroll", () => {
+  hideContextMenu();
+  hideFolderContextMenu();
+}, true);
 
 // Eventos compartidos por audio y video.
 for (const media of [audio, video]) {
@@ -346,7 +371,7 @@ async function loadFromFiles(files, sourceName, keepCurrent = false) {
   activeArtistFilter = "all";
   activeArtistInitial = "";
   activeFolderFilter = "all";
-  activeFolderInitial = "";
+  activeFolderInitials = [];
   activeTypeFilter = "all";
   activeTypeInitial = "";
 
@@ -592,23 +617,14 @@ function renderArtists() {
 
 // Renderiza chips de carpetas con agrupacion por inicial.
 function renderFolders() {
-  const folders = getFilteredValues("folder");
+  const folders = getAllFolderPaths();
   if (activeFolderFilter !== "all" && !folders.includes(activeFolderFilter)) {
     activeFolderFilter = "all";
   }
 
   folderList.innerHTML = "";
-  renderGroupedFilter(folderList, folders, activeFolderInitial, activeFolderFilter, (value) => {
-    if (value === "all") activeFolderInitial = "";
-    activeFolderFilter = value;
-    renderFolders();
-    renderLibrary();
-  }, (initial) => {
-    activeFolderInitial = activeFolderInitial === initial ? "" : initial;
-    activeFolderFilter = "all";
-    renderFolders();
-    renderLibrary();
-  });
+  renderFolderHierarchy(folders);
+  updateHideFolderButton();
 }
 
 // Renderiza chips de tipo (Audio/Video) con agrupacion por inicial.
@@ -642,6 +658,128 @@ function getFilteredValues(key) {
   return [...new Set(tracks.filter((track) => !isTrackHidden(track)).map((track) => track[key]).filter(Boolean))]
     .filter((value) => !query || value.toLowerCase().includes(query))
     .sort((a, b) => new Intl.Collator("es", { sensitivity: "base" }).compare(a, b));
+}
+
+// Devuelve rutas de carpeta unicas sin archivos ocultos individualmente.
+function getAllFolderPaths() {
+  const query = folderSearchInput.value.trim().toLowerCase();
+  const paths = new Set();
+
+  tracks
+    .filter((track) => !hiddenTrackIds.has(track.id))
+    .map((track) => track.folder)
+    .filter(Boolean)
+    .filter((value) => !query || value.toLowerCase().includes(query))
+    .forEach((folder) => {
+      const parts = splitFolderPath(folder);
+      parts.forEach((_, index) => {
+        paths.add(joinFolderPath(parts.slice(0, index + 1)));
+      });
+    });
+
+  return [...paths]
+    .sort((a, b) => new Intl.Collator("es", { sensitivity: "base" }).compare(a, b));
+}
+
+// Renderiza el filtro de carpetas por niveles: padre, subcarpeta, sub-subcarpeta.
+function renderFolderHierarchy(folders) {
+  const allButton = createFilterButton("Todos", "all", activeFolderFilter === "all", (value) => {
+    activeFolderFilter = value;
+    activeFolderInitials = [];
+    renderFolders();
+    renderLibrary();
+  });
+  const allRow = document.createElement("div");
+  allRow.className = "filter-letter-row";
+  allRow.appendChild(allButton);
+  folderList.appendChild(allRow);
+
+  let parentPath = "";
+  let level = 0;
+
+  while (level < maxFolderHierarchyDepth) {
+    const options = getFolderLevelOptions(folders, parentPath, level);
+    if (!options.length) break;
+
+    const levelWrapper = document.createElement("div");
+    levelWrapper.className = "folder-level";
+    folderList.appendChild(levelWrapper);
+    renderFolderLevel(levelWrapper, options, level, parentPath);
+
+    const activeParts = activeFolderFilter === "all" ? [] : splitFolderPath(activeFolderFilter);
+    if (!activeParts[level]) break;
+    parentPath = joinFolderPath(activeParts.slice(0, level + 1));
+    level += 1;
+  }
+}
+
+// Renderiza una fila de letras y una fila de carpetas para un nivel concreto.
+function renderFolderLevel(container, options, level, parentPath) {
+  const activeInitial = activeFolderInitials[level] || "";
+  const letterRow = document.createElement("div");
+  letterRow.className = "filter-letter-row";
+  const optionRow = document.createElement("div");
+  optionRow.className = "filter-option-row";
+
+  const initials = [...new Set(options.map((option) => getInitial(option.label)))];
+  initials.forEach((initial) => {
+    const letterButton = createFilterButton(initial, initial, activeInitial === initial, () => {
+      activeFolderInitials[level] = activeFolderInitials[level] === initial ? "" : initial;
+      activeFolderInitials = activeFolderInitials.slice(0, level + 1);
+      renderFolders();
+    });
+    letterButton.classList.add("letter-chip");
+    letterRow.appendChild(letterButton);
+  });
+
+  container.appendChild(letterRow);
+  container.appendChild(optionRow);
+
+  if (!activeInitial) return;
+  options
+    .filter((option) => getInitial(option.label) === activeInitial)
+    .forEach((option) => {
+      const folderButton = createFilterButton(option.label, option.path, activeFolderFilter === option.path, () => {
+        activeFolderFilter = option.path;
+        activeFolderInitials = activeFolderInitials.slice(0, level + 1);
+        renderFolders();
+        renderLibrary();
+      });
+      if (getHiddenFolderMatch(option.path)) {
+        folderButton.classList.add("folder-hidden");
+        folderButton.title = `${option.label} (oculta de bucles)`;
+      }
+      folderButton.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showFolderContextMenu(event, option.path);
+      });
+      optionRow.appendChild(folderButton);
+    });
+}
+
+// Calcula carpetas hijas directas para el nivel seleccionado.
+function getFolderLevelOptions(folders, parentPath, level) {
+  const seen = new Map();
+  folders.forEach((folder) => {
+    const parts = splitFolderPath(folder);
+    const parentParts = parentPath ? splitFolderPath(parentPath) : [];
+    if (parentParts.length && joinFolderPath(parts.slice(0, parentParts.length)) !== parentPath) return;
+    const label = parts[level];
+    if (!label) return;
+    const path = joinFolderPath(parts.slice(0, level + 1));
+    seen.set(path, { label, path });
+  });
+  return [...seen.values()].sort((a, b) => new Intl.Collator("es", { sensitivity: "base" }).compare(a.label, b.label));
+}
+
+// Divide rutas guardadas como "A / B / C".
+function splitFolderPath(folder) {
+  return String(folder).split(" / ").filter(Boolean);
+}
+
+// Une partes de carpeta con el mismo separador usado en createTrack().
+function joinFolderPath(parts) {
+  return parts.join(" / ");
 }
 
 // Renderiza las letras en una fila y, debajo, los valores de la letra seleccionada.
@@ -704,7 +842,7 @@ function getVisibleTracks() {
     .filter(({ track }) => {
       if (isTrackHidden(track)) return false;
       if (activeArtistFilter !== "all" && track.artist !== activeArtistFilter) return false;
-      if (activeFolderFilter !== "all" && track.folder !== activeFolderFilter) return false;
+      if (activeFolderFilter !== "all" && !isFolderWithin(track.folder, activeFolderFilter)) return false;
       if (activeTypeFilter !== "all" && track.kindLabel !== activeTypeFilter) return false;
       if (titleQuery && !track.title.toLowerCase().includes(titleQuery)) return false;
       return true;
@@ -1141,7 +1279,7 @@ function saveHiddenTrackIds() {
 
 // Determina si una pista esta marcada como oculta.
 function isTrackHidden(track) {
-  return hiddenTrackIds.has(track.id);
+  return hiddenTrackIds.has(track.id) || isFolderHidden(track.folder);
 }
 
 // Oculta o restaura una pista desde el menu contextual.
@@ -1179,7 +1317,9 @@ function toggleTrackHidden(index) {
 // Restaura todos los archivos ocultos.
 function restoreHiddenTracks() {
   hiddenTrackIds.clear();
+  hiddenFolderPaths.clear();
   saveHiddenTrackIds();
+  saveHiddenFolderPaths();
   renderArtists();
   renderFolders();
   renderTypes();
@@ -1187,6 +1327,88 @@ function restoreHiddenTracks() {
   renderQueue();
   renderStats();
   showToast("Archivos ocultos restaurados");
+}
+
+// Carga carpetas ocultas desde localStorage.
+function loadHiddenFolderPaths() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(hiddenFoldersStorageKey) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+// Persiste carpetas ocultas.
+function saveHiddenFolderPaths() {
+  localStorage.setItem(hiddenFoldersStorageKey, JSON.stringify([...hiddenFolderPaths]));
+}
+
+// Comprueba si una carpeta cae dentro de otra ruta de carpeta.
+function isFolderWithin(folder, parentFolder) {
+  return folder === parentFolder || folder.startsWith(`${parentFolder} / `);
+}
+
+// Comprueba si una carpeta o cualquiera de sus padres esta oculta.
+function isFolderHidden(folder) {
+  return [...hiddenFolderPaths].some((hiddenFolder) => isFolderWithin(folder, hiddenFolder));
+}
+
+// Oculta o restaura la carpeta seleccionada en el filtro de carpetas.
+function toggleActiveFolderHidden() {
+  if (activeFolderFilter === "all") {
+    showToast("Selecciona una carpeta primero");
+    return;
+  }
+
+  toggleFolderHidden(activeFolderFilter);
+}
+
+// Oculta o restaura una carpeta concreta, incluyendo sus subcarpetas.
+function toggleFolderHidden(folderPath) {
+  if (!folderPath || folderPath === "all") return;
+
+  activeFolderFilter = folderPath;
+  activeFolderInitials = splitFolderPath(folderPath).map((part) => getInitial(part));
+  const hiddenMatch = getHiddenFolderMatch(folderPath);
+  if (hiddenMatch) {
+    hiddenFolderPaths.delete(hiddenMatch);
+    showToast("Carpeta restaurada");
+  } else {
+    hiddenFolderPaths.add(folderPath);
+    if (currentIndex >= 0 && isTrackHidden(tracks[currentIndex])) {
+      const remaining = getPlayableIndices();
+      if (remaining.length) {
+        nextTrack();
+      } else {
+        stopMedia();
+        currentIndex = -1;
+        resetNowPlaying();
+      }
+    }
+    showToast("Carpeta oculta de bucles");
+  }
+
+  saveHiddenFolderPaths();
+  updateHideFolderButton();
+  renderArtists();
+  renderFolders();
+  renderTypes();
+  renderLibrary();
+  renderQueue();
+  renderStats();
+}
+
+// Actualiza el texto del boton de ocultar carpeta.
+function updateHideFolderButton() {
+  hideFolderBtn.disabled = activeFolderFilter === "all";
+  hideFolderBtn.textContent = activeFolderFilter !== "all" && getHiddenFolderMatch(activeFolderFilter)
+    ? "Mostrar carpeta"
+    : "Ocultar carpeta";
+}
+
+// Devuelve la carpeta oculta que afecta a una ruta, si existe.
+function getHiddenFolderMatch(folder) {
+  return [...hiddenFolderPaths].find((hiddenFolder) => isFolderWithin(folder, hiddenFolder));
 }
 
 // Sincroniza boton de bucle y propiedad loop de audio/video.
@@ -1267,22 +1489,43 @@ function showContextMenu(event, index) {
   const track = tracks[index];
   if (!track) return;
 
+  hideFolderContextMenu();
   contextLoop.textContent = currentIndex === index && repeatMode === "one"
     ? "Quitar bucle de archivo"
     : "Bucle de este archivo";
   contextHide.textContent = isTrackHidden(track) ? "Mostrar en bucles" : "Ocultar de bucles";
 
-  contextMenu.classList.remove("hidden");
-  const menuRect = contextMenu.getBoundingClientRect();
-  const left = Math.min(event.clientX, window.innerWidth - menuRect.width - 8);
-  const top = Math.min(event.clientY, window.innerHeight - menuRect.height - 8);
-  contextMenu.style.left = `${Math.max(left, 8)}px`;
-  contextMenu.style.top = `${Math.max(top, 8)}px`;
+  positionContextMenu(contextMenu, event);
 }
 
 // Oculta el menu contextual.
 function hideContextMenu() {
   contextMenu.classList.add("hidden");
+}
+
+// Muestra el menu contextual de carpetas y adapta la accion segun su estado.
+function showFolderContextMenu(event, folderPath) {
+  contextFolderPath = folderPath;
+  hideContextMenu();
+  folderContextHide.textContent = getHiddenFolderMatch(folderPath)
+    ? "Mostrar carpeta"
+    : "Ocultar carpeta";
+  positionContextMenu(folderContextMenu, event);
+}
+
+// Oculta el menu contextual de carpetas.
+function hideFolderContextMenu() {
+  folderContextMenu.classList.add("hidden");
+}
+
+// Posiciona cualquier menu contextual junto al puntero sin salirse de la ventana.
+function positionContextMenu(menu, event) {
+  menu.classList.remove("hidden");
+  const menuRect = menu.getBoundingClientRect();
+  const left = Math.min(event.clientX, window.innerWidth - menuRect.width - 8);
+  const top = Math.min(event.clientY, window.innerHeight - menuRect.height - 8);
+  menu.style.left = `${Math.max(left, 8)}px`;
+  menu.style.top = `${Math.max(top, 8)}px`;
 }
 
 // Abre el minireproductor y opcionalmente reproduce la pista elegida.
@@ -1365,6 +1608,7 @@ function handleKeyboardShortcuts(event) {
 
   if (event.key === "Escape") {
     hideContextMenu();
+    hideFolderContextMenu();
   }
 }
 
